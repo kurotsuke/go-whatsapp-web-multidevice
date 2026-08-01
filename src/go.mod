@@ -79,4 +79,4 @@ require (
 	modernc.org/memory v1.11.0 // indirect
 )
 
-replace go.mau.fi/whatsmeow => github.com/kurotsuke/whatsmeow v0.0.0-20260801121525-8f11c233e6b1
+replace go.mau.fi/whatsmeow => github.com/kurotsuke/whatsmeow v0.0.0-20260801140653-cc008843d3fa

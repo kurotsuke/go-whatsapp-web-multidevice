@@ -14,6 +14,7 @@ import (
 	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
+	"google.golang.org/protobuf/proto"
 )
 
 func handleMessage(ctx context.Context, evt *events.Message, chatStorageRepo domainChatStorage.IChatStorageRepository, client *whatsmeow.Client) {
@@ -33,10 +34,10 @@ func handleMessage(ctx context.Context, evt *events.Message, chatStorageRepo dom
 	// decryption fails.
 	evt = materializeSecretEditMessage(ctx, evt, client)
 
-	// Materialize EncEventResponseMessage (event RSVP) into its decrypted
-	// EventResponseMessage form so chat storage and webhook forwarding surface
-	// the response like any other message. No-op when the envelope is absent
-	// or when decryption fails.
+	// Materialize EncEventResponseMessage (event RSVP) into a readable text
+	// message so chat storage and webhook forwarding surface the response like
+	// any other message. No-op when the envelope is absent or when decryption
+	// fails.
 	evt = materializeEventResponse(ctx, evt, client)
 
 	if isReactionMessage(evt) {
@@ -155,11 +156,14 @@ func materializeSecretEditMessage(ctx context.Context, evt *events.Message, clie
 }
 
 // materializeEventResponse decrypts an EncEventResponseMessage (event RSVP)
-// envelope into its plain EventResponseMessage form. The response payload is
-// encrypted with the referenced event creation message's secret, so this only
-// succeeds for events this device sent or has the message secret of. Returns
-// the original event when no envelope is present, when the client is nil, or
-// when decryption fails — preserving existing behavior in every other case.
+// envelope into a readable text message quoting the referenced event creation
+// message, so chat storage, webhook forwarding, and the UI surface the RSVP
+// like any other message. EventResponseMessage has no plaintext slot in
+// waE2E.Message (it only exists encrypted on the wire), hence the text form.
+// The response payload is encrypted with the event creation message's secret,
+// so this only succeeds for events this device sent or has the secret of.
+// Returns the original event when no envelope is present, when the client is
+// nil, or when decryption fails.
 func materializeEventResponse(ctx context.Context, evt *events.Message, client *whatsmeow.Client) *events.Message {
 	if evt == nil || evt.Message == nil || client == nil {
 		return evt
@@ -168,19 +172,22 @@ func materializeEventResponse(ctx context.Context, evt *events.Message, client *
 	if enc == nil {
 		return evt
 	}
+	eventKey := enc.GetEventCreationMessageKey()
 	response, err := client.DecryptEventResponse(ctx, evt)
 	if err != nil {
-		eventID := ""
-		if k := enc.GetEventCreationMessageKey(); k != nil {
-			eventID = k.GetID()
-		}
-		log.Warnf("Failed to decrypt event response %s (event=%s): %v", evt.Info.ID, eventID, err)
+		log.Warnf("Failed to decrypt event response %s (event=%s): %v", evt.Info.ID, eventKey.GetID(), err)
 		return evt
 	}
+	text := "📅 RSVP: " + utils.FormatEventResponse(response.GetResponse())
 	cloned := *evt
 	cloned.Message = &waE2E.Message{
-		EventResponseMessage: response,
-		MessageContextInfo:   evt.Message.GetMessageContextInfo(),
+		ExtendedTextMessage: &waE2E.ExtendedTextMessage{
+			Text: proto.String(text),
+			ContextInfo: &waE2E.ContextInfo{
+				StanzaID:    proto.String(eventKey.GetID()),
+				Participant: proto.String(eventKey.GetParticipant()),
+			},
+		},
 	}
 	return &cloned
 }

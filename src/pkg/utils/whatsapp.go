@@ -254,11 +254,6 @@ func ExtractMessageTextFromProto(msg *waE2E.Message) string {
 		return "📅 " + event.GetName()
 	}
 
-	// Check for calendar event RSVP response (decrypted form)
-	if eventResponse := msg.GetEventResponseMessage(); eventResponse != nil {
-		return "📅 RSVP: " + FormatEventResponse(eventResponse.GetResponse())
-	}
-
 	return ""
 }
 
@@ -506,12 +501,12 @@ func BuildForwardMessageFromStorage(message *domainChatStorage.Message, opts For
 	}
 
 	var (
-		mediaURL       string
-		directPath     string
-		mediaKey       []byte
-		fileSHA256     []byte
-		fileEncSHA256  []byte
-		fileLength     uint64
+		mediaURL      string
+		directPath    string
+		mediaKey      []byte
+		fileSHA256    []byte
+		fileEncSHA256 []byte
+		fileLength    uint64
 	)
 
 	if opts.Upload != nil {
