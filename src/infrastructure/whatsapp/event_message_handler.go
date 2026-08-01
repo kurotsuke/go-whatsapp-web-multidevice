@@ -40,6 +40,10 @@ func handleMessage(ctx context.Context, evt *events.Message, chatStorageRepo dom
 	// fails.
 	evt = materializeEventResponse(ctx, evt, client)
 
+	// Same for PollUpdateMessage (poll votes), which were previously dropped
+	// as "no content" messages.
+	evt = materializePollVote(ctx, evt, client)
+
 	if isReactionMessage(evt) {
 		if err := chatStorageRepo.CreateReaction(ctx, evt); err != nil {
 			log.Errorf("Failed to store incoming reaction %s: %v", evt.Info.ID, err)
@@ -186,6 +190,48 @@ func materializeEventResponse(ctx context.Context, evt *events.Message, client *
 			ContextInfo: &waE2E.ContextInfo{
 				StanzaID:    proto.String(eventKey.GetID()),
 				Participant: proto.String(eventKey.GetParticipant()),
+			},
+		},
+	}
+	return &cloned
+}
+
+// materializePollVote decrypts a PollUpdateMessage (poll vote) into a readable
+// text message quoting the referenced poll creation message. Votes carry only
+// SHA-256 hashes of the selected option names and the original options are not
+// persisted, so the text reports the selection count rather than option names.
+// Returns the original event when no vote is present, when the client is nil,
+// or when decryption fails.
+func materializePollVote(ctx context.Context, evt *events.Message, client *whatsmeow.Client) *events.Message {
+	if evt == nil || evt.Message == nil || client == nil {
+		return evt
+	}
+	pollUpdate := utils.UnwrapMessage(evt.Message).GetPollUpdateMessage()
+	if pollUpdate == nil {
+		return evt
+	}
+	pollKey := pollUpdate.GetPollCreationMessageKey()
+	vote, err := client.DecryptPollVote(ctx, evt)
+	if err != nil {
+		log.Warnf("Failed to decrypt poll vote %s (poll=%s): %v", evt.Info.ID, pollKey.GetID(), err)
+		return evt
+	}
+	var text string
+	switch n := len(vote.GetSelectedOptions()); n {
+	case 0:
+		text = "📊 Vote retracted"
+	case 1:
+		text = "📊 Voted for 1 option"
+	default:
+		text = fmt.Sprintf("📊 Voted for %d options", n)
+	}
+	cloned := *evt
+	cloned.Message = &waE2E.Message{
+		ExtendedTextMessage: &waE2E.ExtendedTextMessage{
+			Text: proto.String(text),
+			ContextInfo: &waE2E.ContextInfo{
+				StanzaID:    proto.String(pollKey.GetID()),
+				Participant: proto.String(pollKey.GetParticipant()),
 			},
 		},
 	}
