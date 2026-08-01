@@ -249,7 +249,26 @@ func ExtractMessageTextFromProto(msg *waE2E.Message) string {
 		return FormatLocationSummary(live.GetCaption(), "", live.GetDegreesLatitude(), live.GetDegreesLongitude())
 	}
 
+	// Check for calendar event
+	if event := msg.GetEventMessage(); event != nil {
+		return "📅 " + event.GetName()
+	}
+
 	return ""
+}
+
+// FormatEventResponse renders an event RSVP response type as human-readable text.
+func FormatEventResponse(response waE2E.EventResponseMessage_EventResponseType) string {
+	switch response {
+	case waE2E.EventResponseMessage_GOING:
+		return "Going"
+	case waE2E.EventResponseMessage_NOT_GOING:
+		return "Not going"
+	case waE2E.EventResponseMessage_MAYBE:
+		return "Maybe"
+	default:
+		return "Unknown"
+	}
 }
 
 // ExtractMediaCaption extracts caption text from media messages (image, video, document, PTV).
@@ -482,12 +501,12 @@ func BuildForwardMessageFromStorage(message *domainChatStorage.Message, opts For
 	}
 
 	var (
-		mediaURL       string
-		directPath     string
-		mediaKey       []byte
-		fileSHA256     []byte
-		fileEncSHA256  []byte
-		fileLength     uint64
+		mediaURL      string
+		directPath    string
+		mediaKey      []byte
+		fileSHA256    []byte
+		fileEncSHA256 []byte
+		fileLength    uint64
 	)
 
 	if opts.Upload != nil {
