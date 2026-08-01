@@ -249,7 +249,31 @@ func ExtractMessageTextFromProto(msg *waE2E.Message) string {
 		return FormatLocationSummary(live.GetCaption(), "", live.GetDegreesLatitude(), live.GetDegreesLongitude())
 	}
 
+	// Check for calendar event
+	if event := msg.GetEventMessage(); event != nil {
+		return "📅 " + event.GetName()
+	}
+
+	// Check for calendar event RSVP response (decrypted form)
+	if eventResponse := msg.GetEventResponseMessage(); eventResponse != nil {
+		return "📅 RSVP: " + FormatEventResponse(eventResponse.GetResponse())
+	}
+
 	return ""
+}
+
+// FormatEventResponse renders an event RSVP response type as human-readable text.
+func FormatEventResponse(response waE2E.EventResponseMessage_EventResponseType) string {
+	switch response {
+	case waE2E.EventResponseMessage_GOING:
+		return "Going"
+	case waE2E.EventResponseMessage_NOT_GOING:
+		return "Not going"
+	case waE2E.EventResponseMessage_MAYBE:
+		return "Maybe"
+	default:
+		return "Unknown"
+	}
 }
 
 // ExtractMediaCaption extracts caption text from media messages (image, video, document, PTV).

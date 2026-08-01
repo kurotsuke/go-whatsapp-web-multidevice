@@ -33,6 +33,12 @@ func handleMessage(ctx context.Context, evt *events.Message, chatStorageRepo dom
 	// decryption fails.
 	evt = materializeSecretEditMessage(ctx, evt, client)
 
+	// Materialize EncEventResponseMessage (event RSVP) into its decrypted
+	// EventResponseMessage form so chat storage and webhook forwarding surface
+	// the response like any other message. No-op when the envelope is absent
+	// or when decryption fails.
+	evt = materializeEventResponse(ctx, evt, client)
+
 	if isReactionMessage(evt) {
 		if err := chatStorageRepo.CreateReaction(ctx, evt); err != nil {
 			log.Errorf("Failed to store incoming reaction %s: %v", evt.Info.ID, err)
@@ -145,6 +151,37 @@ func materializeSecretEditMessage(ctx context.Context, evt *events.Message, clie
 	}
 	cloned := *evt
 	cloned.Message = decrypted
+	return &cloned
+}
+
+// materializeEventResponse decrypts an EncEventResponseMessage (event RSVP)
+// envelope into its plain EventResponseMessage form. The response payload is
+// encrypted with the referenced event creation message's secret, so this only
+// succeeds for events this device sent or has the message secret of. Returns
+// the original event when no envelope is present, when the client is nil, or
+// when decryption fails — preserving existing behavior in every other case.
+func materializeEventResponse(ctx context.Context, evt *events.Message, client *whatsmeow.Client) *events.Message {
+	if evt == nil || evt.Message == nil || client == nil {
+		return evt
+	}
+	enc := utils.UnwrapMessage(evt.Message).GetEncEventResponseMessage()
+	if enc == nil {
+		return evt
+	}
+	response, err := client.DecryptEventResponse(ctx, evt)
+	if err != nil {
+		eventID := ""
+		if k := enc.GetEventCreationMessageKey(); k != nil {
+			eventID = k.GetID()
+		}
+		log.Warnf("Failed to decrypt event response %s (event=%s): %v", evt.Info.ID, eventID, err)
+		return evt
+	}
+	cloned := *evt
+	cloned.Message = &waE2E.Message{
+		EventResponseMessage: response,
+		MessageContextInfo:   evt.Message.GetMessageContextInfo(),
+	}
 	return &cloned
 }
 
